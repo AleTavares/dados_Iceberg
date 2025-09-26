@@ -1,0 +1,87 @@
+version: '3.9'
+name: plataforma-iceberg-spark
+
+services:
+  spark-master:
+    container_name: spark_iceberg_master
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+    image: iceberg-spark-image
+    entrypoint: ['./entrypoint.sh', 'master']
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ./dados:/datalake
+      - ./scripts:/opt/spark/apps
+      - ./sparkspark-logs:/opt/spark/spark-events
+    env_file:
+      - ./spark/.env.spark
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+    networks:
+      - plataform-network
+
+  spark-history-server:
+    container_name: spark_iceberg_history
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+    image: iceberg-spark-image
+    entrypoint: ['./entrypoint.sh', 'history']
+    depends_on:
+      - spark-master
+    env_file:
+      - ./spark/.env.spark
+    volumes:
+      - ./spark/spark-logs:/opt/spark/spark-events
+    ports:
+      - '18080:18080'
+    networks:
+      - plataform-network
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: spark/Dockerfile
+    image: iceberg-spark-image
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master
+    env_file:
+      - ./spark/.env.spark
+    volumes:
+      - ./dados:/datalake
+      - ./scripts:/opt/spark/apps
+      - ./spark/spark-logs:/opt/spark/spark-events
+    networks:
+      - plataform-network
+
+  postgres_erp:
+    container_name: postgres-erp
+    image: postgres:latest
+    # restart: always
+    environment:
+      POSTGRES_DB: northwind
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:                  
+      - ./postgres_erp/dados:/var/lib/postgresql/data
+      - ./db/northwind.sql:/docker-entrypoint-initdb.d/northwind.sql
+    ports:
+      - 2001:5432
+    networks:
+      - plataform-network
+networks:
+  plataform-network:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.240.0/24"
+
+volumes:
+  spark-logs:
